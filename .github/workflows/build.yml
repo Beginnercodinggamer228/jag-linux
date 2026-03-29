@@ -33,16 +33,13 @@ jobs:
     - name: Apply JAG Linux kernel patches
       run: |
         cd linux-src
-        # Apply custom panic screen patch
         patch -p1 < ../jag-linux/kernel/patches/0001-jag-panic-screen.patch || true
         echo "Patches applied"
 
     - name: Configure kernel
       run: |
         cd linux-src
-        # Start from x86_64 defconfig as a solid base
         make x86_64_defconfig
-        # Apply JAG Linux customizations on top
         ./scripts/config --set-str CONFIG_LOCALVERSION "-jaglinux"
         ./scripts/config --enable CONFIG_DEVTMPFS
         ./scripts/config --enable CONFIG_DEVTMPFS_MOUNT
@@ -70,19 +67,16 @@ jobs:
 
     - name: Download static busybox
       run: |
-        wget -q https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox \
-          -O busybox-static
+        wget -q https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox -O busybox-static
         chmod +x busybox-static
 
     - name: Build initramfs
       run: |
         mkdir -p initramfs/{bin,sbin,etc/init.d,proc,sys,dev,tmp,root,run,home/jag}
 
-        # Install busybox
         cp busybox-static initramfs/bin/busybox
         chmod 755 initramfs/bin/busybox
 
-        # Create busybox symlinks
         for cmd in sh ash ls cat echo cp mv rm mkdir rmdir touch \
                    mount umount grep sed awk cut sort uniq head tail wc \
                    find chmod chown ln pwd df du free top ps kill \
@@ -94,88 +88,125 @@ jobs:
         ln -sf /bin/busybox initramfs/sbin/init
         ln -sf /bin/busybox initramfs/sbin/getty
 
-        # sudo wrapper
-        cat > initramfs/bin/sudo << 'SUDOEOF'
-        #!/bin/sh
-        if [ -z "$1" ]; then echo "usage: sudo COMMAND"; exit 1; fi
-        exec "$@"
-        SUDOEOF
+        # sudo
+        printf '#!/bin/sh\nif [ -z "$1" ]; then echo "usage: sudo COMMAND"; exit 1; fi\nexec "$@"\n' \
+          > initramfs/bin/sudo
         chmod 755 initramfs/bin/sudo
 
         # /etc/passwd
-        cat > initramfs/etc/passwd << 'EOF'
-        root:x:0:0:root:/root:/bin/sh
-        jag:x:1000:1000:JAG User:/home/jag:/bin/sh
-        EOF
+        printf 'root:x:0:0:root:/root:/bin/sh\njag:x:1000:1000:JAG User:/home/jag:/bin/sh\n' \
+          > initramfs/etc/passwd
 
-        cat > initramfs/etc/group << 'EOF'
-        root:x:0:root
-        jag:x:1000:jag
-        EOF
+        # /etc/group
+        printf 'root:x:0:root\njag:x:1000:jag\n' > initramfs/etc/group
 
         # /etc/inittab
-        cat > initramfs/etc/inittab << 'EOF'
-        ::sysinit:/etc/init.d/rcS
-        ::respawn:/bin/sh
-        ::ctrlaltdel:/bin/reboot
-        ::shutdown:/bin/umount -a -r
-        EOF
+        printf '::sysinit:/etc/init.d/rcS\n::respawn:/bin/sh\n::ctrlaltdel:/bin/reboot\n::shutdown:/bin/umount -a -r\n' \
+          > initramfs/etc/inittab
 
         # /etc/init.d/rcS
-        cat > initramfs/etc/init.d/rcS << 'EOF'
-        #!/bin/sh
-        mount -t proc proc /proc
-        mount -t sysfs sysfs /sys
-        mount -t devtmpfs devtmpfs /dev
-        mknod -m 666 /dev/tty1    c 4 1 2>/dev/null || true
-        mknod -m 666 /dev/console c 5 1 2>/dev/null || true
-        mknod -m 666 /dev/null    c 1 3 2>/dev/null || true
-        mkdir -p /dev/pts
-        mount -t devpts devpts /dev/pts 2>/dev/null || true
-        mount -t tmpfs tmpfs /tmp
-        mount -t tmpfs tmpfs /run
-        echo "jaglinux" > /proc/sys/kernel/hostname
-        ip link set lo up 2>/dev/null || true
-        clear
-        cat /etc/issue
-        EOF
+        cat > initramfs/etc/init.d/rcS << 'RCSEOF'
+#!/bin/sh
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mknod -m 666 /dev/tty1    c 4 1 2>/dev/null || true
+mknod -m 666 /dev/console c 5 1 2>/dev/null || true
+mknod -m 666 /dev/null    c 1 3 2>/dev/null || true
+mkdir -p /dev/pts
+mount -t devpts devpts /dev/pts 2>/dev/null || true
+mount -t tmpfs tmpfs /tmp
+mount -t tmpfs tmpfs /run
+echo "jaglinux" > /proc/sys/kernel/hostname
+ip link set lo up 2>/dev/null || true
+clear
+cat /etc/issue
+RCSEOF
         chmod 755 initramfs/etc/init.d/rcS
 
         # /etc/issue
-        cat > initramfs/etc/issue << 'EOF'
-        Jag Linux v1.0 beta
-        All copying to third-party resources is permitted with the indication of the author
-        If you don't know the command, type jag-help or visit: https://jaglinux.example.com
+        cat > initramfs/etc/issue << 'ISSUEEOF'
+Jag Linux v1.0 beta
+All copying to third-party resources is permitted with the indication of the author
+If you don't know the command, type jag-help or visit: https://jaglinux.example.com
 
-        EOF
+ISSUEEOF
 
         # /etc/profile
-        cat > initramfs/etc/profile << 'EOF'
-        export PATH=/bin:/sbin:/usr/bin:/usr/sbin
-        export HOME=/root
-        export TERM=linux
-        export PS1='[JAG \w]# '
-        alias ll='ls -lh --color=auto'
-        alias la='ls -A --color=auto'
-        EOF
+        cat > initramfs/etc/profile << 'PROFEOF'
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+export HOME=/root
+export TERM=linux
+export PS1='[JAG \w]# '
+alias ll='ls -lh --color=auto'
+alias la='ls -A --color=auto'
+PROFEOF
 
         # jag-help
-        cp jag-linux/scripts/jag-help initramfs/bin/jag-help 2>/dev/null || \
-        cat > initramfs/bin/jag-help << 'EOF'
-        #!/bin/sh
-        echo "jag-help -type:all   show all commands"
-        echo "jag-help -type:CMD   command info"
-        EOF
+        cat > initramfs/bin/jag-help << 'HELPEOF'
+#!/bin/sh
+ARG="$1"
+if [ -z "$ARG" ]; then
+    echo ""
+    echo "  Jag Linux v1.0 beta -- Help"
+    echo "  ----------------------------------------"
+    echo "  jag-help -type:all          all commands"
+    echo "  jag-help -type:COMMAND      command info"
+    echo ""
+    echo "  Example: jag-help -type:ls"
+    echo ""
+    exit 0
+fi
+show_all() {
+    echo ""
+    echo "  --- FILES ---"
+    echo "  ls cp mv rm mkdir find chmod"
+    echo ""
+    echo "  --- TEXT ---"
+    echo "  cat echo grep head tail vi"
+    echo ""
+    echo "  --- SYSTEM ---"
+    echo "  ps top kill free df uname dmesg sudo reboot poweroff"
+    echo ""
+    echo "  --- NETWORK ---"
+    echo "  ping ip wget"
+    echo ""
+    echo "  Use: jag-help -type:COMMAND for details"
+    echo ""
+}
+case "$ARG" in
+    -type:all)      show_all | more ;;
+    -type:ls)       echo "  ls [options] [path]"; echo "  -l detailed  -a hidden  -h sizes" ;;
+    -type:cd)       echo "  cd PATH  /  cd ..  /  cd /" ;;
+    -type:cp)       echo "  cp SRC DST  /  cp -r DIR DST" ;;
+    -type:mv)       echo "  mv SRC DST" ;;
+    -type:rm)       echo "  rm FILE  /  rm -r DIR  /  rm -f FILE" ;;
+    -type:cat)      echo "  cat FILE" ;;
+    -type:grep)     echo "  grep PATTERN FILE  (-i ignore case, -r recursive)" ;;
+    -type:vi)       echo "  vi FILE  |  i=insert  Esc=exit  :wq=save  :q!=quit" ;;
+    -type:ps)       echo "  ps  /  ps aux" ;;
+    -type:kill)     echo "  kill PID  /  kill -9 PID" ;;
+    -type:ping)     echo "  ping HOST  /  ping -c 4 google.com" ;;
+    -type:wget)     echo "  wget URL" ;;
+    -type:sudo)     echo "  sudo COMMAND  (run as root)" ;;
+    -type:free)     echo "  free  /  free -m" ;;
+    -type:df)       echo "  df  /  df -h" ;;
+    -type:uname)    echo "  uname -a" ;;
+    -type:reboot)   echo "  reboot" ;;
+    -type:poweroff) echo "  poweroff" ;;
+    -type:tar)      echo "  tar -czf arch.tar.gz DIR  /  tar -xzf arch.tar.gz" ;;
+    -type:ip)       echo "  ip addr  /  ip link" ;;
+    *)  echo "  Unknown: ${ARG#-type:}  Try: jag-help -type:all" ;;
+esac
+echo ""
+HELPEOF
         chmod 755 initramfs/bin/jag-help
 
         # /init
-        cat > initramfs/init << 'EOF'
-        #!/bin/sh
-        exec /sbin/init
-        EOF
+        printf '#!/bin/sh\nexec /sbin/init\n' > initramfs/init
         chmod 755 initramfs/init
 
-        # Pack initramfs
+        # Pack
         cd initramfs
         find . | cpio -H newc -o --owner=0:0 | gzip -9 > ../initrd.gz
         cd ..
@@ -185,49 +216,44 @@ jobs:
       run: |
         mkdir -p iso_root/{boot,isolinux}
 
-        # Kernel and initrd
         cp linux-src/arch/x86/boot/bzImage iso_root/boot/vmlinuz
         cp initrd.gz iso_root/boot/initrd.gz
 
-        # Isolinux bootloader
-        cp /usr/lib/ISOLINUX/isolinux.bin iso_root/isolinux/
+        cp /usr/lib/ISOLINUX/isolinux.bin        iso_root/isolinux/
         cp /usr/lib/syslinux/modules/bios/ldlinux.c32  iso_root/isolinux/
         cp /usr/lib/syslinux/modules/bios/libcom32.c32 iso_root/isolinux/
         cp /usr/lib/syslinux/modules/bios/libutil.c32  iso_root/isolinux/
         cp /usr/lib/syslinux/modules/bios/vesamenu.c32 iso_root/isolinux/
 
-        # Splash screen
-        cp jag-linux/config/wallpapers/splash.png iso_root/isolinux/ 2>/dev/null || true
+        cp jag-linux/iso_build/isolinux/splash.png iso_root/isolinux/ 2>/dev/null || true
 
-        # isolinux.cfg
-        cat > iso_root/isolinux/isolinux.cfg << 'EOF'
-        DEFAULT jaglinux
-        TIMEOUT 300
-        PROMPT 0
-        UI vesamenu.c32
-        MENU BACKGROUND splash.png
-        MENU TITLE JAG Linux 1.0
+        cat > iso_root/isolinux/isolinux.cfg << 'CFGEOF'
+DEFAULT jaglinux
+TIMEOUT 300
+PROMPT 0
+UI vesamenu.c32
+MENU BACKGROUND splash.png
+MENU TITLE JAG Linux 1.0
 
-        MENU COLOR title    1;36;44 #ff4fc3f7 #00000000 std
-        MENU COLOR sel      7;37;40 #ffffffff #ff4fc3f7 std
-        MENU COLOR unsel    37;44   #cfcfcfcf #00000000 std
+MENU COLOR title    1;36;44 #ff4fc3f7 #00000000 std
+MENU COLOR sel      7;37;40 #ffffffff #ff4fc3f7 std
+MENU COLOR unsel    37;44   #cfcfcfcf #00000000 std
 
-        LABEL jaglinux
-            MENU LABEL JAG Linux 1.0 (64-bit)
-            KERNEL /boot/vmlinuz
-            APPEND initrd=/boot/initrd.gz console=ttyS0,115200 console=tty1
+LABEL jaglinux
+    MENU LABEL JAG Linux 1.0 (64-bit)
+    KERNEL /boot/vmlinuz
+    APPEND initrd=/boot/initrd.gz console=ttyS0,115200 console=tty1
 
-        LABEL jaglinux-debug
-            MENU LABEL JAG Linux 1.0 (debug mode)
-            KERNEL /boot/vmlinuz
-            APPEND initrd=/boot/initrd.gz console=ttyS0,115200 console=tty1 debug
+LABEL jaglinux-debug
+    MENU LABEL JAG Linux 1.0 (debug mode)
+    KERNEL /boot/vmlinuz
+    APPEND initrd=/boot/initrd.gz console=ttyS0,115200 console=tty1 debug
 
-        LABEL hd
-            MENU LABEL Boot from hard drive
-            LOCALBOOT 0x80
-        EOF
+LABEL hd
+    MENU LABEL Boot from hard drive
+    LOCALBOOT 0x80
+CFGEOF
 
-        # Build ISO
         genisoimage \
           -o jaglinux-1.0-amd64.iso \
           -b isolinux/isolinux.bin \
