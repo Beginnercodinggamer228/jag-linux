@@ -89,20 +89,32 @@ jobs:
         ln -sf /bin/busybox initramfs/sbin/getty
 
         # sudo
-        printf '#!/bin/sh\nif [ -z "$1" ]; then echo "usage: sudo COMMAND"; exit 1; fi\nexec "$@"\n' \
-          > initramfs/bin/sudo
+        cat > initramfs/bin/sudo << 'SUDOEOF'
+#!/bin/sh
+if [ -z "$1" ]; then echo "usage: sudo COMMAND"; exit 1; fi
+exec "$@"
+SUDOEOF
         chmod 755 initramfs/bin/sudo
 
         # /etc/passwd
-        printf 'root:x:0:0:root:/root:/bin/sh\njag:x:1000:1000:JAG User:/home/jag:/bin/sh\n' \
-          > initramfs/etc/passwd
+        cat > initramfs/etc/passwd << 'PASSEOF'
+root:x:0:0:root:/root:/bin/sh
+jag:x:1000:1000:JAG User:/home/jag:/bin/sh
+PASSEOF
 
         # /etc/group
-        printf 'root:x:0:root\njag:x:1000:jag\n' > initramfs/etc/group
+        cat > initramfs/etc/group << 'GRPEOF'
+root:x:0:root
+jag:x:1000:jag
+GRPEOF
 
         # /etc/inittab
-        printf '::sysinit:/etc/init.d/rcS\n::respawn:/bin/sh\n::ctrlaltdel:/bin/reboot\n::shutdown:/bin/umount -a -r\n' \
-          > initramfs/etc/inittab
+        cat > initramfs/etc/inittab << 'TABEOF'
+::sysinit:/etc/init.d/rcS
+::respawn:/bin/sh
+::ctrlaltdel:/bin/reboot
+::shutdown:/bin/umount -a -r
+TABEOF
 
         # /etc/init.d/rcS
         cat > initramfs/etc/init.d/rcS << 'RCSEOF'
@@ -203,7 +215,10 @@ HELPEOF
         chmod 755 initramfs/bin/jag-help
 
         # /init
-        printf '#!/bin/sh\nexec /sbin/init\n' > initramfs/init
+        cat > initramfs/init << 'INITEOF'
+#!/bin/sh
+exec /sbin/init
+INITEOF
         chmod 755 initramfs/init
 
         # Pack
