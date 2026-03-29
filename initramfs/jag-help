@@ -1,0 +1,55 @@
+#!/bin/sh
+ARG="$1"
+if [ -z "$ARG" ]; then
+    echo ""
+    echo "  Jag Linux v1.0 beta -- Help"
+    echo "  ----------------------------------------"
+    echo "  jag-help -type:all          all commands"
+    echo "  jag-help -type:COMMAND      command info"
+    echo ""
+    echo "  Example: jag-help -type:ls"
+    echo ""
+    exit 0
+fi
+show_all() {
+    echo ""
+    echo "  --- FILES ---"
+    echo "  ls cp mv rm mkdir find chmod"
+    echo ""
+    echo "  --- TEXT ---"
+    echo "  cat echo grep head tail vi"
+    echo ""
+    echo "  --- SYSTEM ---"
+    echo "  ps top kill free df uname dmesg sudo reboot poweroff"
+    echo ""
+    echo "  --- NETWORK ---"
+    echo "  ping ip wget"
+    echo ""
+    echo "  Use: jag-help -type:COMMAND for details"
+    echo ""
+}
+case "$ARG" in
+    -type:all)      show_all | more ;;
+    -type:ls)       echo "  ls [options] [path]"; echo "  -l detailed  -a hidden  -h sizes" ;;
+    -type:cd)       echo "  cd PATH  /  cd ..  /  cd /" ;;
+    -type:cp)       echo "  cp SRC DST  /  cp -r DIR DST" ;;
+    -type:mv)       echo "  mv SRC DST" ;;
+    -type:rm)       echo "  rm FILE  /  rm -r DIR  /  rm -f FILE" ;;
+    -type:cat)      echo "  cat FILE" ;;
+    -type:grep)     echo "  grep PATTERN FILE  (-i ignore case, -r recursive)" ;;
+    -type:vi)       echo "  vi FILE  |  i=insert  Esc=exit  :wq=save  :q!=quit" ;;
+    -type:ps)       echo "  ps  /  ps aux" ;;
+    -type:kill)     echo "  kill PID  /  kill -9 PID" ;;
+    -type:ping)     echo "  ping HOST  /  ping -c 4 google.com" ;;
+    -type:wget)     echo "  wget URL" ;;
+    -type:sudo)     echo "  sudo COMMAND  (run as root)" ;;
+    -type:free)     echo "  free  /  free -m" ;;
+    -type:df)       echo "  df  /  df -h" ;;
+    -type:uname)    echo "  uname -a" ;;
+    -type:reboot)   echo "  reboot" ;;
+    -type:poweroff) echo "  poweroff" ;;
+    -type:tar)      echo "  tar -czf arch.tar.gz DIR  /  tar -xzf arch.tar.gz" ;;
+    -type:ip)       echo "  ip addr  /  ip link" ;;
+    *)  echo "  Unknown: ${ARG#-type:}  Try: jag-help -type:all" ;;
+esac
+echo ""
