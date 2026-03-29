@@ -122,6 +122,8 @@ jobs:
 
         cp iso_build/isolinux/splash.png iso_root/isolinux/ 2>/dev/null || true
         cp iso_build/isolinux/isolinux.cfg iso_root/isolinux/
+        # Replace vesamenu with simple text menu to avoid COM32 errors
+        sed -i '/^UI vesamenu/d; /^MENU /d' iso_root/isolinux/isolinux.cfg
 
         genisoimage \
           -o jaglinux-1.0-amd64.iso \
