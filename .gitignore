@@ -1,0 +1,6 @@
+output/
+rootfs/
+work/
+*.iso
+*.img
+*.log
