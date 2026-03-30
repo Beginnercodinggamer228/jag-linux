@@ -37,6 +37,8 @@ jobs:
         cd initramfs_work
         gunzip -c ../alpine_extract/boot/initramfs-lts | cpio -idm 2>/dev/null || true
 
+        mkdir -p usr/local/bin etc/profile.d
+
         cp ../rootfs-files/issue etc/issue
         cp ../rootfs-files/jag-help usr/local/bin/jag-help
         cp ../rootfs-files/sudo usr/local/bin/sudo
