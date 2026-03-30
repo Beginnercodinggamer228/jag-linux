@@ -17,16 +17,12 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update -qq
-        sudo apt-get install -y \
-          wget xorriso squashfs-tools \
-          isolinux syslinux-common \
-          cpio gzip xz-utils \
-          python3
+        sudo apt-get install -y wget xorriso isolinux syslinux-common cpio gzip
 
     - name: Download Alpine Linux
       run: |
         wget -q https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/alpine-standard-3.19.1-x86_64.iso
-        echo "Alpine downloaded: $(du -sh alpine-standard-3.19.1-x86_64.iso | cut -f1)"
+        echo "Alpine: $(du -sh alpine-standard-3.19.1-x86_64.iso | cut -f1)"
 
     - name: Extract Alpine ISO
       run: |
@@ -34,100 +30,39 @@ jobs:
         sudo mount -o loop alpine-standard-3.19.1-x86_64.iso alpine_mnt
         cp -r alpine_mnt/. alpine_extract/
         sudo umount alpine_mnt
-        echo "Extracted files:"
-        ls alpine_extract/
 
-    - name: Extract and modify Alpine initramfs
+    - name: Modify Alpine initramfs
       run: |
         mkdir -p initramfs_work
         cd initramfs_work
+        gunzip -c ../alpine_extract/boot/initramfs-lts | cpio -idm 2>/dev/null || true
 
-        # Extract initramfs
-        cp ../alpine_extract/boot/initramfs-lts ./initramfs.gz
-        gunzip -c initramfs.gz | cpio -idm 2>/dev/null || true
-        echo "Files in initramfs: $(find . | wc -l)"
-
-        # Add JAG Linux branding to /etc/issue
-        cat > etc/issue << 'EOF'
-Jag Linux v1.0 beta (based on Alpine Linux)
-All copying is permitted with the indication of the author
-Type jag-help for help or visit: https://jaglinux.example.com
-
-EOF
-
-        # Add jag-help
+        cp ../rootfs-files/issue etc/issue
         cp ../rootfs-files/jag-help usr/local/bin/jag-help
-        chmod 755 usr/local/bin/jag-help
-
-        # Add sudo wrapper
         cp ../rootfs-files/sudo usr/local/bin/sudo
-        chmod 755 usr/local/bin/sudo
+        cp ../rootfs-files/profile.d-jag.sh etc/profile.d/jag.sh
+        chmod 755 usr/local/bin/jag-help usr/local/bin/sudo etc/profile.d/jag.sh
 
-        # Add profile customization
-        cat >> etc/profile << 'EOF'
-export PS1='[JAG \w]# '
-alias ll='ls -lh --color=auto'
-alias la='ls -A --color=auto'
-echo ""
-echo "  Welcome to JAG Linux v1.0 beta!"
-echo "  Type jag-help for available commands."
-echo ""
-EOF
-
-        # Repack initramfs
         find . | cpio -H newc -o --owner=0:0 2>/dev/null | gzip -9 > ../initramfs-jag.gz
         cd ..
-        echo "New initramfs: $(du -sh initramfs-jag.gz | cut -f1)"
+        echo "initramfs: $(du -sh initramfs-jag.gz | cut -f1)"
 
-    - name: Build JAG Linux ISO
+    - name: Build ISO
       run: |
-        mkdir -p iso_root/boot/grub
-        mkdir -p iso_root/isolinux
+        mkdir -p iso_root/boot iso_root/isolinux
 
-        # Copy Alpine kernel
         cp alpine_extract/boot/vmlinuz-lts iso_root/boot/vmlinuz
-
-        # Copy modified initramfs
         cp initramfs-jag.gz iso_root/boot/initrd.gz
 
-        # Copy isolinux bootloader
-        cp /usr/lib/ISOLINUX/isolinux.bin        iso_root/isolinux/
+        cp /usr/lib/ISOLINUX/isolinux.bin              iso_root/isolinux/
         cp /usr/lib/syslinux/modules/bios/ldlinux.c32  iso_root/isolinux/
         cp /usr/lib/syslinux/modules/bios/libcom32.c32 iso_root/isolinux/
         cp /usr/lib/syslinux/modules/bios/libutil.c32  iso_root/isolinux/
         cp /usr/lib/syslinux/modules/bios/menu.c32     iso_root/isolinux/
 
-        # Copy splash
         cp iso_build/isolinux/splash.png iso_root/isolinux/ 2>/dev/null || true
+        cp rootfs-files/isolinux.cfg iso_root/isolinux/isolinux.cfg
 
-        # isolinux.cfg
-        cat > iso_root/isolinux/isolinux.cfg << 'EOF'
-DEFAULT jaglinux
-TIMEOUT 300
-PROMPT 0
-UI menu.c32
-
-MENU TITLE JAG Linux 1.0 -- Just Are Good Linux
-MENU COLOR title    1;36;40 #ff4fc3f7 #00000000
-MENU COLOR sel      7;37;40 #ffffffff #ff4fc3f7
-MENU COLOR unsel    37;44   #cfcfcfcf #00000000
-
-LABEL jaglinux
-    MENU LABEL JAG Linux 1.0 (64-bit)
-    KERNEL /boot/vmlinuz
-    APPEND initrd=/boot/initrd.gz modules=loop,squashfs,sd-mod,usb-storage quiet console=tty1
-
-LABEL jaglinux-debug
-    MENU LABEL JAG Linux 1.0 (debug mode)
-    KERNEL /boot/vmlinuz
-    APPEND initrd=/boot/initrd.gz modules=loop,squashfs,sd-mod,usb-storage console=tty1
-
-LABEL hd
-    MENU LABEL Boot from hard drive
-    LOCALBOOT 0x80
-EOF
-
-        # Build ISO
         xorriso -as mkisofs \
           -o jaglinux-1.0-amd64.iso \
           -b isolinux/isolinux.bin \
@@ -140,7 +75,7 @@ EOF
           -J -r \
           iso_root
 
-        echo "ISO built: $(du -sh jaglinux-1.0-amd64.iso | cut -f1)"
+        echo "ISO: $(du -sh jaglinux-1.0-amd64.iso | cut -f1)"
 
     - name: Upload ISO
       uses: actions/upload-artifact@v4
