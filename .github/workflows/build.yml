@@ -43,7 +43,13 @@ jobs:
         cp ../rootfs-files/jag-help usr/local/bin/jag-help
         cp ../rootfs-files/sudo usr/local/bin/sudo
         cp ../rootfs-files/profile.d-jag.sh etc/profile.d/jag.sh
-        chmod 755 usr/local/bin/jag-help usr/local/bin/sudo etc/profile.d/jag.sh
+        cp ../rootfs-files/jag-init.sh usr/local/bin/jag-init.sh
+        chmod 755 usr/local/bin/jag-help usr/local/bin/sudo etc/profile.d/jag.sh usr/local/bin/jag-init.sh
+
+        # Fix inittab for autologin
+        if [ -f etc/inittab ]; then
+          sed -i 's|tty1::respawn:/sbin/getty.*|tty1::respawn:/sbin/getty -n -l /bin/sh 38400 tty1|' etc/inittab
+        fi
 
         find . | cpio -H newc -o --owner=0:0 2>/dev/null | gzip -9 > ../initramfs-jag.gz
         cd ..
@@ -60,6 +66,7 @@ jobs:
         cp /usr/lib/syslinux/modules/bios/ldlinux.c32  iso_root/isolinux/
         cp /usr/lib/syslinux/modules/bios/libcom32.c32 iso_root/isolinux/
         cp /usr/lib/syslinux/modules/bios/libutil.c32  iso_root/isolinux/
+        cp /usr/lib/syslinux/modules/bios/vesamenu.c32 iso_root/isolinux/
         cp /usr/lib/syslinux/modules/bios/menu.c32     iso_root/isolinux/
 
         cp iso_build/isolinux/splash.png iso_root/isolinux/ 2>/dev/null || true
