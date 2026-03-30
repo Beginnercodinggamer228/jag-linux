@@ -1,6 +1,5 @@
 #!/bin/sh
-ARG="$1"
-if [ -z "$ARG" ]; then
+if [ -z "$1" ]; then
     echo ""
     echo "  Jag Linux v1.0 beta -- Help"
     echo "  ----------------------------------------"
@@ -17,18 +16,25 @@ show_all() {
     echo "  ls cp mv rm mkdir find chmod"
     echo ""
     echo "  --- TEXT ---"
-    echo "  cat echo grep head tail vi"
+    echo "  cat echo grep head tail vi nano"
     echo ""
     echo "  --- SYSTEM ---"
-    echo "  ps top kill free df uname dmesg sudo reboot poweroff"
+    echo "  ps top kill free df uname dmesg"
+    echo "  sudo reboot poweroff"
     echo ""
     echo "  --- NETWORK ---"
-    echo "  ping ip wget"
+    echo "  ping ip wget curl"
+    echo ""
+    echo "  --- ALPINE PACKAGE MANAGER ---"
+    echo "  apk add PACKAGE    install package"
+    echo "  apk del PACKAGE    remove package"
+    echo "  apk update         update package list"
+    echo "  apk search NAME    search packages"
     echo ""
     echo "  Use: jag-help -type:COMMAND for details"
     echo ""
 }
-case "$ARG" in
+case "$1" in
     -type:all)      show_all | more ;;
     -type:ls)       echo "  ls [options] [path]"; echo "  -l detailed  -a hidden  -h sizes" ;;
     -type:cd)       echo "  cd PATH  /  cd ..  /  cd /" ;;
@@ -38,10 +44,12 @@ case "$ARG" in
     -type:cat)      echo "  cat FILE" ;;
     -type:grep)     echo "  grep PATTERN FILE  (-i ignore case, -r recursive)" ;;
     -type:vi)       echo "  vi FILE  |  i=insert  Esc=exit  :wq=save  :q!=quit" ;;
+    -type:nano)     echo "  nano FILE  |  Ctrl+S=save  Ctrl+X=exit" ;;
     -type:ps)       echo "  ps  /  ps aux" ;;
     -type:kill)     echo "  kill PID  /  kill -9 PID" ;;
     -type:ping)     echo "  ping HOST  /  ping -c 4 google.com" ;;
     -type:wget)     echo "  wget URL" ;;
+    -type:curl)     echo "  curl URL  /  curl -O URL  (download)" ;;
     -type:sudo)     echo "  sudo COMMAND  (run as root)" ;;
     -type:free)     echo "  free  /  free -m" ;;
     -type:df)       echo "  df  /  df -h" ;;
@@ -50,6 +58,11 @@ case "$ARG" in
     -type:poweroff) echo "  poweroff" ;;
     -type:tar)      echo "  tar -czf arch.tar.gz DIR  /  tar -xzf arch.tar.gz" ;;
     -type:ip)       echo "  ip addr  /  ip link" ;;
-    *)  echo "  Unknown: ${ARG#-type:}  Try: jag-help -type:all" ;;
+    -type:apk)      echo "  apk add PACKAGE    install"
+                    echo "  apk del PACKAGE    remove"
+                    echo "  apk update         update list"
+                    echo "  apk upgrade        upgrade all"
+                    echo "  apk search NAME    search" ;;
+    *)  echo "  Unknown: ${1#-type:}  Try: jag-help -type:all" ;;
 esac
 echo ""

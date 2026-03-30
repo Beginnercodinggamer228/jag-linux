@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    timeout-minutes: 60
 
     steps:
     - name: Checkout repository
@@ -18,136 +18,133 @@ jobs:
       run: |
         sudo apt-get update -qq
         sudo apt-get install -y \
-          build-essential gcc make bc flex bison \
-          libssl-dev libelf-dev libncurses-dev \
+          wget xorriso squashfs-tools \
+          isolinux syslinux-common \
           cpio gzip xz-utils \
-          genisoimage isolinux syslinux-common \
-          wget curl git
+          python3
 
-    - name: Download Linux kernel 6.6 LTS
+    - name: Download Alpine Linux
       run: |
-        wget -q https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.6.30.tar.xz
-        tar -xf linux-6.6.30.tar.xz
-        mv linux-6.6.30 linux-src
+        wget -q https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/alpine-standard-3.19.1-x86_64.iso
+        echo "Alpine downloaded: $(du -sh alpine-standard-3.19.1-x86_64.iso | cut -f1)"
 
-    - name: Apply JAG Linux kernel patches
+    - name: Extract Alpine ISO
       run: |
-        cd linux-src
-        patch -p1 < ../kernel/patches/0001-jag-panic-screen.patch || true
+        mkdir -p alpine_mnt alpine_extract
+        sudo mount -o loop alpine-standard-3.19.1-x86_64.iso alpine_mnt
+        cp -r alpine_mnt/. alpine_extract/
+        sudo umount alpine_mnt
+        echo "Extracted files:"
+        ls alpine_extract/
 
-    - name: Configure kernel
+    - name: Extract and modify Alpine initramfs
       run: |
-        cd linux-src
-        make x86_64_defconfig
-        ./scripts/config --set-str CONFIG_LOCALVERSION "-jaglinux"
-        ./scripts/config --enable CONFIG_DEVTMPFS
-        ./scripts/config --enable CONFIG_DEVTMPFS_MOUNT
-        ./scripts/config --enable CONFIG_SQUASHFS
-        ./scripts/config --enable CONFIG_SQUASHFS_XZ
-        ./scripts/config --enable CONFIG_OVERLAY_FS
-        ./scripts/config --enable CONFIG_BLK_DEV_RAM
-        ./scripts/config --set-val CONFIG_BLK_DEV_RAM_SIZE 65536
-        ./scripts/config --enable CONFIG_VIRTIO
-        ./scripts/config --enable CONFIG_VIRTIO_PCI
-        ./scripts/config --enable CONFIG_VIRTIO_BLK
-        ./scripts/config --enable CONFIG_VIRTIO_NET
-        ./scripts/config --enable CONFIG_VIRTIO_CONSOLE
-        ./scripts/config --enable CONFIG_FB_VESA
-        ./scripts/config --enable CONFIG_FRAMEBUFFER_CONSOLE
-        ./scripts/config --set-val CONFIG_PANIC_TIMEOUT 30
-        ./scripts/config --enable CONFIG_PANIC_ON_OOPS
-        make olddefconfig
+        mkdir -p initramfs_work
+        cd initramfs_work
 
-    - name: Build kernel
-      run: |
-        cd linux-src
-        make -j$(nproc) bzImage 2>&1 | tail -20
-        echo "Kernel built: $(ls -lh arch/x86/boot/bzImage)"
+        # Extract initramfs
+        cp ../alpine_extract/boot/initramfs-lts ./initramfs.gz
+        gunzip -c initramfs.gz | cpio -idm 2>/dev/null || true
+        echo "Files in initramfs: $(find . | wc -l)"
 
-    - name: Download static busybox
-      run: |
-        wget -q https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox -O busybox-static
-        chmod +x busybox-static
+        # Add JAG Linux branding to /etc/issue
+        cat > etc/issue << 'EOF'
+Jag Linux v1.0 beta (based on Alpine Linux)
+All copying is permitted with the indication of the author
+Type jag-help for help or visit: https://jaglinux.example.com
 
-    - name: Build initramfs
-      run: |
-        mkdir -p initramfs/{bin,sbin,etc/init.d,proc,sys,dev,tmp,root,run,home/jag}
+EOF
 
-        cp busybox-static initramfs/bin/busybox
-        chmod 755 initramfs/bin/busybox
+        # Add jag-help
+        cp ../rootfs-files/jag-help usr/local/bin/jag-help
+        chmod 755 usr/local/bin/jag-help
 
-        for cmd in sh ash ls cat echo cp mv rm mkdir rmdir touch \
-                   mount umount grep sed awk cut sort uniq head tail wc \
-                   find chmod chown ln pwd df du free top ps kill \
-                   sleep date uname hostname ip ping wget tar gzip \
-                   gunzip vi more less clear reset reboot poweroff \
-                   dmesg mknod id whoami; do
-          ln -sf /bin/busybox initramfs/bin/$cmd
-        done
-        ln -sf /bin/busybox initramfs/sbin/init
-        ln -sf /bin/busybox initramfs/sbin/getty
+        # Add sudo wrapper
+        cp ../rootfs-files/sudo usr/local/bin/sudo
+        chmod 755 usr/local/bin/sudo
 
-        cp rootfs-files/sudo       initramfs/bin/sudo
-        cp rootfs-files/jag-help   initramfs/bin/jag-help
-        cp rootfs-files/init       initramfs/init
-        cp rootfs-files/passwd     initramfs/etc/passwd
-        cp rootfs-files/group      initramfs/etc/group
-        cp rootfs-files/inittab    initramfs/etc/inittab
-        cp rootfs-files/issue      initramfs/etc/issue
-        cp rootfs-files/profile    initramfs/etc/profile
-        cp rootfs-files/rcS        initramfs/etc/init.d/rcS
+        # Add profile customization
+        cat >> etc/profile << 'EOF'
+export PS1='[JAG \w]# '
+alias ll='ls -lh --color=auto'
+alias la='ls -A --color=auto'
+echo ""
+echo "  Welcome to JAG Linux v1.0 beta!"
+echo "  Type jag-help for available commands."
+echo ""
+EOF
 
-        chmod 755 initramfs/bin/sudo
-        chmod 755 initramfs/bin/jag-help
-        chmod 755 initramfs/init
-        chmod 755 initramfs/etc/init.d/rcS
-
-        cd initramfs
-        find . | cpio -H newc -o --owner=0:0 | gzip -9 > ../initrd.gz
+        # Repack initramfs
+        find . | cpio -H newc -o --owner=0:0 2>/dev/null | gzip -9 > ../initramfs-jag.gz
         cd ..
-        echo "initrd.gz: $(du -sh initrd.gz | cut -f1)"
+        echo "New initramfs: $(du -sh initramfs-jag.gz | cut -f1)"
 
-    - name: Build ISO
+    - name: Build JAG Linux ISO
       run: |
-        mkdir -p iso_root/{boot,isolinux}
+        mkdir -p iso_root/boot/grub
+        mkdir -p iso_root/isolinux
 
-        cp linux-src/arch/x86/boot/bzImage iso_root/boot/vmlinuz
-        cp initrd.gz iso_root/boot/initrd.gz
+        # Copy Alpine kernel
+        cp alpine_extract/boot/vmlinuz-lts iso_root/boot/vmlinuz
 
-        cp /usr/lib/ISOLINUX/isolinux.bin              iso_root/isolinux/
+        # Copy modified initramfs
+        cp initramfs-jag.gz iso_root/boot/initrd.gz
+
+        # Copy isolinux bootloader
+        cp /usr/lib/ISOLINUX/isolinux.bin        iso_root/isolinux/
         cp /usr/lib/syslinux/modules/bios/ldlinux.c32  iso_root/isolinux/
         cp /usr/lib/syslinux/modules/bios/libcom32.c32 iso_root/isolinux/
         cp /usr/lib/syslinux/modules/bios/libutil.c32  iso_root/isolinux/
-        cp /usr/lib/syslinux/modules/bios/vesamenu.c32 iso_root/isolinux/
+        cp /usr/lib/syslinux/modules/bios/menu.c32     iso_root/isolinux/
 
+        # Copy splash
         cp iso_build/isolinux/splash.png iso_root/isolinux/ 2>/dev/null || true
-        cp iso_build/isolinux/isolinux.cfg iso_root/isolinux/
-        # Replace vesamenu with simple text menu to avoid COM32 errors
-        sed -i '/^UI vesamenu/d; /^MENU /d' iso_root/isolinux/isolinux.cfg
 
-        genisoimage \
+        # isolinux.cfg
+        cat > iso_root/isolinux/isolinux.cfg << 'EOF'
+DEFAULT jaglinux
+TIMEOUT 300
+PROMPT 0
+UI menu.c32
+
+MENU TITLE JAG Linux 1.0 -- Just Are Good Linux
+MENU COLOR title    1;36;40 #ff4fc3f7 #00000000
+MENU COLOR sel      7;37;40 #ffffffff #ff4fc3f7
+MENU COLOR unsel    37;44   #cfcfcfcf #00000000
+
+LABEL jaglinux
+    MENU LABEL JAG Linux 1.0 (64-bit)
+    KERNEL /boot/vmlinuz
+    APPEND initrd=/boot/initrd.gz modules=loop,squashfs,sd-mod,usb-storage quiet console=tty1
+
+LABEL jaglinux-debug
+    MENU LABEL JAG Linux 1.0 (debug mode)
+    KERNEL /boot/vmlinuz
+    APPEND initrd=/boot/initrd.gz modules=loop,squashfs,sd-mod,usb-storage console=tty1
+
+LABEL hd
+    MENU LABEL Boot from hard drive
+    LOCALBOOT 0x80
+EOF
+
+        # Build ISO
+        xorriso -as mkisofs \
           -o jaglinux-1.0-amd64.iso \
           -b isolinux/isolinux.bin \
           -c isolinux/boot.cat \
           -no-emul-boot \
           -boot-load-size 4 \
           -boot-info-table \
-          -V JAGLINUX \
+          -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
+          -V "JAGLINUX" \
           -J -r \
           iso_root
 
         echo "ISO built: $(du -sh jaglinux-1.0-amd64.iso | cut -f1)"
 
-    - name: Upload ISO artifact
+    - name: Upload ISO
       uses: actions/upload-artifact@v4
       with:
         name: jaglinux-1.0-amd64
         path: jaglinux-1.0-amd64.iso
-        retention-days: 30
-
-    - name: Upload kernel artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: jaglinux-kernel
-        path: linux-src/arch/x86/boot/bzImage
         retention-days: 30
